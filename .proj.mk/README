@@ -1,0 +1,411 @@
+Overview
+========
+
+proj.mk is a Makefile based build tool(inspired by erlang.mk - the best
+build tool for erlang projects; and by plan9 build mkfiles).
+
+
+Goals
+=====
+
+- atomatize as much as possible downloading and building of dependencies
+- handle subdependencies
+- build a project
+- try to do these as simple as possible
+
+
+How to use for a program
+========================
+
+If you have a small project without dependencies, just run
+PROJMKDIR/bootstrap.sh from your project directory(where
+PROJMKDIR is a directory where proj.mk project files are resided - i.e.
+a directory inside which you cloned proj.mk repo):
+
+PROJMKDIR/bootstrap.sh prog-c PROGNAME
+
+bootstrap.sh:
+- create .proj.mk directory
+- copy proj.mk files excluding git internal files and tests
+- copy proj.mk file template as PROGNAME.proj.mk
+- set PROJECT variable in PROGNAME.proj.mk to PROGNAME
+- create a symlink to proj.mk file with 'Makefile' name.
+
+To see all available templates run:
+
+PROJMKDIR/bootstrap.sh -h
+
+After this execute make command to build a project.
+
+If you want to build several binaries, then specify them in
+TARGET variable:
+```
+PROJECT := myproj
+TARGET := myprog1 myprog2
+SOURCES := src1.c src2.c src3.c
+
+include .proj.mk/c-proj.mk
+```
+
+Source files specified in SOURCES will be used for all targets and
+object file TARGET_NAME.c.o will be add to every target. In the
+example above this mean that myprog1 have the next objects as
+prerequisites: myprog1.c.o src1.c.o src2.c.o src3.c.o.
+
+If you do not specify TARGET variable, then it value is equal to PROJECT
+value.
+
+If your project have dependencies, then they need to be specified:
+```
+PROJECT := mybinary
+SOURCES := mybinary.c another.c
+
+DEPS := liba libb2
+deps_get_liba := wget http://libsite.org/liba.tgz
+deps_get_libb := wget http://libsite.org/libb-2.0.txz
+
+include .proj.mk/c-proj.mk
+```
+
+Here DEPS contains dependencies(by their PROJECT value) and
+deps_get_* contains how each of them can be obtained(see
+Schemes of dependency obtaining section).
+
+A default target type for a dependency can be overriden with help
+of deps_ttype_* variables. E.g.:
+```
+PROJECT := mybinary
+SOURCES := mybinary.c another.c
+
+DEPS := liba libb2
+deps_get_liba := wget http://libsite.org/liba.tgz
+deps_get_libb := wget http://libsite.org/libb-2.0.txz
+deps_ttype_libb := libso
+
+include .proj.mk/c-proj.mk
+```
+
+If you want to use a some system library, just add it name
+which is recognized by pkg-config to DEPS. E.g. for sdl2:
+```
+DEPS := liba libb2 sdl2
+```
+
+
+How to use for a library
+========================
+
+At first, we must use PROJECT.proj.mk as makefile name(where
+PROJECT is a value of PROJECT variable), because when we use
+our library as a dependency in some project with proj.mk,
+proj.mk detect how to handle building and installing of a
+dependency based on the presence of PROJECT.proj.mk file.
+
+Makefile can be made a symblic link to PROJECT.proj.mk file.
+
+To make a library you should specify a lib file name in TARGET:
+```
+PROJECT := libmy
+TARGET := libmy.a
+SOURCES := src1.c src2.c src3.c
+
+include .proj.mk/c-proj.mk
+```
+
+proj.mk try to detect the correct target type(static library)
+from the TARGET variable value and set TARGET_TYPE variable to
+a it. But we can set TARGET_TYPE explicitly:
+```
+PROJECT := libmy
+TARGET_TYPE := liba
+TARGET := libmy.a
+SOURCES := src1.c src2.c src3.c
+
+include .proj.mk/c-proj.mk
+```
+
+For a shared library, just change TARGET(and TARGET_TYPE if you use):
+```
+PROJECT := libmy
+TARGET := libmy.so
+SOURCES := src1.c src2.c src3.c
+
+include .proj.mk/c-proj.mk
+```
+
+If you want to support a building static and shared lib in one project,
+you can create liba.mk with instructions for static lib(like example
+above) and libso.mk with instructions for shared lib(like example
+above) and create the next libmy.proj.mk:
+```
+TARGET_TYPE ?= liba
+include $(TARGET_TYPE).mk
+```
+
+Thus, by default make will build a static lib and a shared lib
+with the next command - TARGET_TYPE=libso make .
+
+If your liba.mk and libso.mk different only in TARGET value,
+you can remove liba.mk and libso.mk and make the next libmy.proj.mk:
+```
+PROJECT := libmy
+TARGET_TYPE ?= liba
+SOURCES := src1.c src2.c src3.c
+
+include .proj.mk/c-proj.mk
+```
+
+In this case TARGET is constructed from PROJECT value and
+a file extension corresponding to TARGET_TYPE value.
+
+To use this lib as dependency for some project we should create
+a libmy.proj.mk.info file with needed modifications to CFLAGS
+and LDFLAGS. E.g.:
+```
+LDFLAGS += -lmy
+```
+
+Note that we use += to add needed options to LDFLAGS, bacause
+proj.mk.info files are used via makefile include directive and
+if we use = instead of +=, we remove all previously set options.
+Do not forget about this!
+
+
+How to adapt your library for using in projects with proj.mk
+============================================================
+
+To make your library be used from projects with proj.mk you
+need not to rewrite your makefile with proj.mk. You simply
+should add YOULIBNAME.proj.mk.info file to a project root
+directory(for info about a content of this file see above
+sections). You need to create YOULIBNAME.proj.mk in addition
+to YOULIBNAME.proj.mk.info only in
+case when your library have some dependencies you want to
+be obtained automatically with proj.mk powered project.
+
+
+How to adapt some library for using in your project
+==================================================
+
+To make some library be used in your project you
+should add LIBNAME.proj.mk.info file into .proj.mk/db.priv
+directory(for info about a content of this file see above
+sections). If you need more control over this library
+building, installing and handling it dependencies, you
+can create LIBNAME.proj.mk file in addition to
+LIBNAME.proj.mk.info.
+
+
+How to perform custom actions before and after build
+====================================================
+
+To perform some actions before an all targets building(if TARGET
+contains many programs) create a build-pre target in your Makefile:
+```
+build-pre::
+	echo Starting
+	...
+```
+
+To perform some actions after an all targets building create a
+build-post target:
+```
+build-post::
+	echo Finishing
+	...
+```
+
+
+How to install your program/library
+===================================
+
+proj.mk doesn't have yet a default install target, but it
+try to helps us a little by definition of DESTDIR, PREFIX and D
+variables. DESTDIR by default is /; PREFIX by default is /usr/local;
+D by default is $(DESTDIR)/$(PREFIX). Thus if we use D variable
+when writing a recipe for a install target, then most distros
+packaging tools and proj.mk dependencies handling will work fine.
+
+
+How it works
+============
+
+Let's see what happen(simplified view) when we execute make command:
+
+1. If we have no DEPS, then go to 10
+2. If all DEPS are built(i.e. all DEPSDIR/src/DEP.proj.mk.info exist),
+   then go to 10
+3. If all DEPS are obtained(i.e. all DEPSDIR/src/.DEP.get exist),
+   then go to 7
+4. Create DEPSDIR/* directories, if not exist.
+5. Obtain the next dependency from DEPS
+6. Create DEPSDIR/src/.DEP.get file
+7. Build and install the dependency, if DEPSDIR/src/DEP exist
+7.1. if deps_build_DEP defined, run custom command, go to 8
+7.2. if PROJDIR/.proj.mk/db.priv/DEP.proj.mk exist, use it, go to 8
+7.3. if PROJMKDIR/db.priv/DEP.proj.mk exist, use it, go to 8
+7.4. if DEPSDIR/src/DEP/DEP.proj.mk exist, use it, go to 8
+7.5. if PROJMKDIR/db/DEP.proj.mk exist, use it, go to 8
+7.6. if DEPSDIR/src/DEP/configure exist, run configure, make and
+     make install, go to 8
+7.7. run make and make install
+8. Create DEPSDIR/src/DEP.proj.mk.info file
+8.1. Generate info for DEP itself
+8.1.1. if PROJDIR/.proj.mk/db.priv/DEP.proj.mk.info exist, use it, go to 8.2
+8.1.2. if PROJMKDIR/db.priv/DEP.proj.mk.info exist, use it, go to 8.2
+8.1.3. if DEPSDIR/src/DEP/DEP.proj.mk.info exist, use it, go to 8.2
+8.1.4. if DEPSDIR/src/DEP/.proj.mk.info exist, use it, go to 8.2
+8.1.5. if PROJMKDIR/db/DEP.proj.mk.info exist, use it, go to 8.2
+8.1.6. if pkg-config --exists DEP exit with ecode 0, use it, go to 8.2
+8.2. Generate info for DEP dependencies(call 'make projmk_gendepsinfo' with
+     found makefile)
+8.2.1. if PROJDIR/.proj.mk/db.priv/DEP.proj.mk exist, use it, go to 9
+8.2.2. if PROJMKDIR/db.priv/DEP.proj.mk exist, use it, go to 9
+8.2.3. if DEPSDIR/src/DEP/DEP.proj.mk exist, use it, go to 9
+8.2.4. if PROJMKDIR/db/DEP.proj.mk exist, use it, go to 9
+9. Go to 2
+10. Build the project
+
+When 'make deps' is executed, then at first DEPSDIR/src/*.proj.mk.info
+are removed, then steps from 1 to 10 are performed.
+
+default target is build:
+
+build: build-pre $(TARGET) build-post
+
+build-pre and build-post are for custom recipes.
+
+
+Target types
+============
+
+TARGET_TYPE variable contains a target type. It can be:
+
+- prog  - for building a program
+- liba  - for building a static library
+- libso - for building a shared library
+
+If there is no TARGET_TYPE variable, proj.mk try to detect
+a type of a target from TARGET variable value and set the
+correct TARGET_TYPE value.
+
+
+Schemes of dependency obtaining
+===============================
+
+A value of dep_get_* variable has the next format:
+
+SCHEME SCHEME_DATA
+
+Where SCHEME can be one of:
+
+- ln - for a symbolic link creation for the SCHEME_DATA directory
+- cp - for a recursive copy of the SCHEME_DATA directory
+- git - for a git-clone of a git repository specified in SCHEME_DATA first
+        word; second optional word of SCHEME_DATA can be commit/branch/tag
+        to git-checkout after git-clone
+- wget - for downloading via wget a compressed archive from specified
+         SCHEME_DATA uri(support file format is tar.gz, tar.bz2, tar.xz, zip)
+- custom - for custom commands
+
+
+Build stage
+===========
+
+Each USE_* variable from Makefile are added to CFLAGS in form
+-DVARNAME=VARVALUE and can be used in source files. Thus, we can decide
+functions of which lib to use in our source and support building against
+various libs with identical purpose.
+
+
+Create a source tarball with all deps
+=====================================
+
+'make clean-deps' can be used to execute 'make clean-all' for all deps.
+After that a source tarball with all deps can be created.
+At the destination machine 'make deps' can be used to rebuild all
+deps.
+
+
+Autotests framework
+===================
+
+After bootstrap.sh finish, there is tests directory in a current directory.
+This is an autotests framework. Here we can find t001.c file that can be
+used as a template.
+
+Examples
+========
+
+See tests directory for examples. Each subdir(t*) can be used
+as an example.
+
+
+Variables used(interface)
+=========================
+
+PROJECT - project name(often equal to TARGET); for lib this is used for
+          directory name when lib is used as dependency.
+DESTDIR - destination directory for install target
+PREFIX  - prefix directory for install target
+D       - $(DESTDIR)/$(PREFIX)
+DEPS_VARS_RMDUPS - variables names where duplicate words should be removed
+DEPS_VARS_EXPORT - variables names which should be exported
+TARGET  - a target name
+OBJS    - an objects names for specified target
+DEPS    - project dependencies
+deps_get_*   - specify how to obtain a dependency
+deps_patch_* - specify patches(separated with spaces) for a dependency
+deps_build_* - specify how to build and install a dependency
+deps_ttype_* - specify a dependency target type to build
+USE_DEP - used dependencies(like USE_libsvsnprintf)
+USE__*   - wanted features(like USE__THREADS)
+
+
+Variables used(internal)
+========================
+PROJDIR   - a project directory(for dependencies - a directory where
+            project that depend on this lib is reside)
+PROJMKDIR - proj.mk internal directory
+DEPSDIR   - a directory where dependencies will be placed
+          (downloaded,compiled,installed)
+O         - object files extension (o by default)
+projmk_* - variables and targets names
+DEPS_ME_IS_DEP - set to 1 if proj.mk detect that project is used
+                 as dependency
+
+Targets used(interface)
+=======================
+
+build       - default target to build all targets in TARGET variable
+build-pre   - pre build actions(before all targets)
+build-post  - post build actions(after all targets)
+TARGET      - build a TARGET target
+TARGET-pre  - pre build actions(before TARGET target)
+TARGET-post - post build actions(after TARGET target)
+TARGET_TYPE - a type of a target(prog, liba)
+deps        - just obtain and build dependencies
+deps_show   - show dependencies recursively
+clean       - clean *~ and *.o
+clean-deps  - do make clean-all for all deps
+clean-tests - do $(MAKE) -C tests clean
+clean-all   - do clean-tests, clean, clean-deps-all
+tests       - do $(MAKE) -C tests
+
+
+Targets used(internal)
+======================
+DEPSDIR/src/DEP.proj.mk.info - dependency build flag for DEP dependency
+                               (remove to rebuild a dependency)
+DEPSDIR/src/.DEP.get         - dependency obtain flag for DEP dependency
+                               (remove to reobtain a dependency)
+deps_                        - obtain and build dependencies
+deps_genfullinfo             -
+
+
+Conventions
+===========
+
+Variables that some dependencies want:
+
+USE__THREADS  - NO/PTHREAD - what thread implementation to use

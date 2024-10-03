@@ -1,0 +1,4 @@
+7. add egetopt_split(): split string with command line arguments into array
+   (like argv).
+8. flags for parse: duplicate argv if we shouldn't change the original argv
+9. flags for parse: start from argv[0], instead of argv[1]

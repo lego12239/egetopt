@@ -1,0 +1,103 @@
+OVERVIEW
+========
+
+A library for parsing command line options.
+
+
+SYNOPSIS
+========
+
+#include "egetopt.h"
+
+int egetopt_parse(int argc, char **argv, int (*cb)(const char *oname, const char *oval, void *priv), void *priv)
+int egetopt_parse_hsearch(int argc, char **argv, struct egetopt_opt opts[], int (*cb)(const struct egetopt_opt *odef, const char *oval, void *priv), void *priv)
+const char* egetopt_strerror(int ecode)
+
+
+FEATURES
+========
+
+* short option and long option support
+* short option bundling support
+* options mixed with non-option arguments
+* support of "--" to indicate an options end
+
+
+DESCRIPTION
+===========
+
+egetopt_parse() is used to parse a command line options. NOTE: in most cases
+you want to use egetopt_parse_hsearch().
+
+This function accepts 4 arguments. Arguments count and arguments array are the
+same as for main() function; argv[0] is a program name and not parsed.
+
+cb is a callback that called on each option found. It accepts 3 arguments:
+option name, option value and private data pointer. A private data pointer is
+a 4d argument of egetopt_parse() that will be passed to a callback untounched.
+An option value is a possible value of an option. egetopt_parse() doesn't know
+is this option require a value or not. But it parses argv as if every option
+require a value. And callback must tell through it return code If this
+option is an option with a value or not. A callback must return 0 for option
+without a value and 1 for option with a value. If cb returns 1, then an
+argument with this option is removed from argv. If cb returns 0, then
+this argument is not removed from argv and parsed as usual in the next
+iteration. For short option, oname is a pointer to an internal egetopt_parse
+local buffer; so, you need to strdup it if you want to use it later.
+
+After egetopt_parse() finish, argv contains only non-option arguments (options
+and their values are removed from argv) and return value is an arguments count.
+
+egetopt_parse_hsearch() is used to parse a command line options. Its behaviour
+is identical to egetopt_parse(), except:
+
+- hsearch_r() is used to get an option definition from specified opts[]
+- cb() is got as first argument an option definition from opts[]
+- if an option isn't found in opts[], then cb odef is NULL and oval is set to
+  this option name
+
+struct egetopt_opt is declared as:
+
+struct egetopt_opt {
+	const char *name;
+	int val;
+};
+
+Where, name is an option name with prepended '-' for short option and
+prepended '--' for long option; val is any value associated with this option.
+A name is used by hsearch_r() to find a needed option definition. And a value
+is intended to be used by a callback to quickly understand what the option is,
+without comparing the strings. See examples to better understand this.
+
+egetopt_strerror() is used to get a textual error message for an error code
+returned from egetopt_*(). This is a pointer to static string, thus this
+content shouldn't be changed or freed!
+
+
+RETURN VALUE
+============
+
+egetopt_parse() and egetopt_parse_hsearch() returns an arguments count in argv
+after all options and their values are removed from it.
+
+egetopt_strerror() returns a pointer to a static string representation of
+specified error code. Do not change it or free!
+
+
+EXAMPLES
+========
+
+There are 2 examples: ex1.c and ex2.c. They can be compiled after the lib with
+the next command:
+
+make ex1 ex2
+
+
+RATIONALE
+=========
+
+This is experimental library for research of a simpler interface for parsing
+command line options than getopt_long(). Unlike getopt_long(), egetopt parse
+routines doesn't declare option value(argument) status (no, optional, required)
+before the start. So, will the option has an argument or not can be defined
+dynamically during a work (inside a callback).
